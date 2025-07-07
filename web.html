@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音頻分割器 - 10分鐘片段</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .upload-area {
+            border: 2px dashed #ccc;
+            border-radius: 5px;
+            padding: 30px;
+            text-align: center;
+            margin: 20px 0;
+            background-color: #fafafa;
+            transition: all 0.3s;
+        }
+        .upload-area.dragover {
+            background-color: #e8f5e9;
+            border-color: #4CAF50;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .upload-btn {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .upload-btn:hover {
+            background-color: #45a049;
+        }
+        
+        /* 進度條樣式 */
+        .progress-container {
+            display: none;
+            margin: 30px 0;
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .progress-section {
+            margin-bottom: 20px;
+        }
+        
+        .progress-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 24px;
+            background-color: #e0e0e0;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50 0%, #45a049 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .progress-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(
+                45deg,
+                rgba(255, 255, 255, 0.2) 25%,
+                transparent 25%,
+                transparent 50%,
+                rgba(255, 255, 255, 0.2) 50%,
+                rgba(255, 255, 255, 0.2) 75%,
+                transparent 75%,
+                transparent
+            );
+            background-size: 30px 30px;
+            animation: progress-animation 1s linear infinite;
+        }
+        
+        @keyframes progress-animation {
+            0% {
+                background-position: 0 0;
+            }
+            100% {
+                background-position: 30px 30px;
+            }
+        }
+        
+        .progress-text {
+            position: absolute;
+            width: 100%;
+            text-align: center;
+            line-height: 24px;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+        }
+        
+        /* ZIP打包進度條 */
+        .zip-progress .progress-fill {
+            background: linear-gradient(90deg, #FF5722 0%, #E64A19 100%);
+        }
+        
+        .segments {
+            margin-top: 30px;
+        }
+        .segment-item {
+            background-color: #f9f9f9;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            opacity: 0;
+            animation: fadeIn 0.5s forwards;
+        }
+        
+        @keyframes fadeIn {
+            to {
+                opacity: 1;
+            }
+        }
+        
+        .download-btn {
+            background-color: #2196F3;
+            color: white;
+            padding: 8px 15px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        .download-btn:hover {
+            background-color: #1976D2;
+        }
+        .download-all-btn {
+            background-color: #FF5722;
+            color: white;
+            padding: 12px 25px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 20px 0;
+            display: none;
+            width: 100%;
+        }
+        .download-all-btn:hover {
+            background-color: #E64A19;
+        }
+        .download-all-btn:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .info {
+            color: #666;
+            font-size: 14px;
+            margin: 10px 0;
+        }
+        .error-msg {
+            color: #f44336;
+            background-color: #ffebee;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            display: none;
+        }
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 15px 0;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+        }
+        .checkbox-container input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        .checkbox-container label {
+            cursor: pointer;
+            user-select: none;
+        }
+        
+        .status-message {
+            text-align: center;
+            color: #666;
+            font-size: 16px;
+            margin: 10px 0;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>音頻分割器</h1>
+        <p class="info">將音頻文件自動分割成10分鐘的片段</p>
+        
+        <div class="upload-area" id="uploadArea">
+            <p>點擊選擇音頻文件或拖放到此處</p>
+            <input type="file" id="audioFile" accept="audio/*">
+            <button class="upload-btn" onclick="document.getElementById('audioFile').click()">
+                選擇音頻文件
+            </button>
+        </div>
+        
+        <div class="checkbox-container">
+            <input type="checkbox" id="autoZip" checked>
+            <label for="autoZip">自動將所有片段打包成ZIP檔案</label>
+        </div>
+        
+        <div class="error-msg" id="errorMsg"></div>
+        
+        <!-- 進度條容器 -->
+        <div class="progress-container" id="progressContainer">
+            <div class="status-message" id="statusMessage">準備處理...</div>
+            
+            <!-- 音頻處理進度 -->
+            <div class="progress-section" id="audioProgress">
+                <div class="progress-label">
+                    <span>音頻分割進度</span>
+                    <span id="audioProgressPercent">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="audioProgressFill">
+                        <div class="progress-text" id="audioProgressText">0%</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- ZIP打包進度 -->
+            <div class="progress-section zip-progress" id="zipProgress" style="display: none;">
+                <div class="progress-label">
+                    <span>ZIP打包進度</span>
+                    <span id="zipProgressPercent">0%</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="zipProgressFill">
+                        <div class="progress-text" id="zipProgressText">0%</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="segments" id="segments"></div>
+        
+        <button class="download-all-btn" id="downloadAllBtn" onclick="downloadAllAsZip()">
+            下載所有片段 (ZIP)
+        </button>
+    </div>
+
+    <script>
+        const SEGMENT_DURATION = 600; // 10分鐘 = 600秒
+        let audioSegments = []; // 儲存所有音頻片段
+        let originalFileName = '';
+        
+        // 檢查JSZip是否載入成功
+        window.onload = function() {
+            if (typeof JSZip === 'undefined') {
+                showError('JSZip庫載入失敗，請刷新頁面重試');
+            }
+        };
+        
+        document.getElementById('audioFile').addEventListener('change', handleFileSelect);
+        
+        // 拖放功能
+        const uploadArea = document.getElementById('uploadArea');
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            if (files.length > 0 && files[0].type.startsWith('audio/')) {
+                processAudioFile(files[0]);
+            }
+        });
+        
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file && file.type.startsWith('audio/')) {
+                processAudioFile(file);
+            }
+        }
+        
+        function showError(message) {
+            const errorMsg = document.getElementById('errorMsg');
+            errorMsg.textContent = message;
+            errorMsg.style.display = 'block';
+            setTimeout(() => {
+                errorMsg.style.display = 'none';
+            }, 5000);
+        }
+        
+        function updateProgress(type, percent, message) {
+            if (type === 'audio') {
+                document.getElementById('audioProgressFill').style.width = percent + '%';
+                document.getElementById('audioProgressText').textContent = percent + '%';
+                document.getElementById('audioProgressPercent').textContent = percent + '%';
+            } else if (type === 'zip') {
+                document.getElementById('zipProgressFill').style.width = percent + '%';
+                document.getElementById('zipProgressText').textContent = percent + '%';
+                document.getElementById('zipProgressPercent').textContent = percent + '%';
+            }
+            
+            if (message) {
+                document.getElementById('statusMessage').textContent = message;
+            }
+        }
+        
+        async function processAudioFile(file) {
+            const progressContainer = document.getElementById('progressContainer');
+            const segmentsDiv = document.getElementById('segments');
+            const downloadAllBtn = document.getElementById('downloadAllBtn');
+            
+            // 重置
+            audioSegments = [];
+            originalFileName = file.name.replace(/\.[^/.]+$/, '');
+            progressContainer.style.display = 'block';
+            segmentsDiv.innerHTML = '';
+            downloadAllBtn.style.display = 'none';
+            updateProgress('audio', 0, '正在讀取音頻文件...');
+            
+            try {
+                // 讀取音頻文件
+                const arrayBuffer = await file.arrayBuffer();
+                updateProgress('audio', 10, '正在解碼音頻...');
+                
+                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                
+                const duration = audioBuffer.duration;
+                const sampleRate = audioBuffer.sampleRate;
+                const numberOfChannels = audioBuffer.numberOfChannels;
+                
+                // 計算需要分割的片段數
+                const segmentCount = Math.ceil(duration / SEGMENT_DURATION);
+                
+                segmentsDiv.innerHTML = `<h3>音頻信息</h3>
+                    <p class="info">檔案名稱: ${file.name}<br>
+                    總時長: ${formatTime(duration)} | 
+                    將分割成 ${segmentCount} 個片段</p>`;
+                
+                updateProgress('audio', 20, '開始分割音頻...');
+                
+                // 分割音頻
+                for (let i = 0; i < segmentCount; i++) {
+                    const startTime = i * SEGMENT_DURATION;
+                    const endTime = Math.min((i + 1) * SEGMENT_DURATION, duration);
+                    const segmentDuration = endTime - startTime;
+                    
+                    updateProgress('audio', 
+                        20 + Math.floor((i / segmentCount) * 70), 
+                        `正在處理片段 ${i + 1}/${segmentCount}...`
+                    );
+                    
+                    // 創建新的音頻緩衝區
+                    const segmentBuffer = audioContext.createBuffer(
+                        numberOfChannels,
+                        Math.floor(segmentDuration * sampleRate),
+                        sampleRate
+                    );
+                    
+                    // 複製音頻數據
+                    for (let channel = 0; channel < numberOfChannels; channel++) {
+                        const originalData = audioBuffer.getChannelData(channel);
+                        const segmentData = segmentBuffer.getChannelData(channel);
+                        const startSample = Math.floor(startTime * sampleRate);
+                        
+                        for (let j = 0; j < segmentData.length; j++) {
+                            if (startSample + j < originalData.length) {
+                                segmentData[j] = originalData[startSample + j];
+                            }
+                        }
+                    }
+                    
+                    // 將緩衝區轉換為WAV格式
+                    const wavBlob = await bufferToWave(segmentBuffer, segmentBuffer.length);
+                    const fileName = `${originalFileName}_片段${(i + 1).toString().padStart(2, '0')}.wav`;
+                    
+                    // 儲存片段信息
+                    audioSegments.push({
+                        blob: wavBlob,
+                        fileName: fileName,
+                        startTime: startTime,
+                        endTime: endTime
+                    });
+                    
+                    const url = URL.createObjectURL(wavBlob);
+                    
+                    // 創建下載鏈接
+                    const segmentItem = document.createElement('div');
+                    segmentItem.className = 'segment-item';
+                    segmentItem.style.animationDelay = `${i * 0.1}s`;
+                    segmentItem.innerHTML = `
+                        <div>
+                            <strong>片段 ${i + 1}</strong>
+                            <span class="info">(${formatTime(startTime)} - ${formatTime(endTime)})</span>
+                        </div>
+                        <a href="${url}" download="${fileName}" 
+                           class="download-btn">單獨下載</a>
+                    `;
+                    segmentsDiv.appendChild(segmentItem);
+                }
+                
+                updateProgress('audio', 100, '音頻分割完成！');
+                
+                setTimeout(() => {
+                    progressContainer.style.display = 'none';
+                    downloadAllBtn.style.display = 'block';
+                    
+                    // 如果勾選了自動打包，則自動下載ZIP
+                    if (document.getElementById('autoZip').checked) {
+                        setTimeout(() => {
+                            downloadAllAsZip();
+                        }, 500);
+                    }
+                }, 1000);
+                
+            } catch (error) {
+                console.error('處理音頻時發生錯誤:', error);
+                showError('處理音頻文件時發生錯誤：' + error.message);
+                progressContainer.style.display = 'none';
+            }
+        }
+        
+        async function downloadAllAsZip() {
+            if (typeof JSZip === 'undefined') {
+                showError('JSZip庫未載入，無法打包文件');
+                return;
+            }
+            
+            const downloadBtn = document.getElementById('downloadAllBtn');
+            const progressContainer = document.getElementById('progressContainer');
+            const zipProgressSection = document.getElementById('zipProgress');
+            
+            downloadBtn.disabled = true;
+            progressContainer.style.display = 'block';
+            zipProgressSection.style.display = 'block';
+            updateProgress('zip', 0, '準備打包文件...');
+            
+            try {
+                const zip = new JSZip();
+                
+                // 將所有音頻片段添加到ZIP
+                for (let i = 0; i < audioSegments.length; i++) {
+                    const segment = audioSegments[i];
+                    zip.file(segment.fileName, segment.blob);
+                    updateProgress('zip', 
+                        Math.floor((i + 1) / audioSegments.length * 50), 
+                        `添加文件 ${i + 1}/${audioSegments.length}...`
+                    );
+                }
+                
+                updateProgress('zip', 50, '正在壓縮文件...');
+                
+                // 生成ZIP文件
+                const zipBlob = await zip.generateAsync({
+                    type: 'blob',
+                    compression: 'DEFLATE',
+                    compressionOptions: {
+                        level: 6
+                    },
+                    streamFiles: true
+                }, function updateCallback(metadata) {
+                    const percent = 50 + Math.floor(metadata.percent / 2);
+                    updateProgress('zip', percent, '正在壓縮文件...');
+                });
+                
+                updateProgress('zip', 100, 'ZIP文件生成完成！');
+                
+                // 下載ZIP文件
+                const url = URL.createObjectURL(zipBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${originalFileName}_所有片段.zip`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                
+                setTimeout(() => {
+                    URL.revokeObjectURL(url);
+                    progressContainer.style.display = 'none';
+                    zipProgressSection.style.display = 'none';
+                    downloadBtn.disabled = false;
+                }, 1500);
+                
+            } catch (error) {
+                console.error('打包ZIP時發生錯誤:', error);
+                showError('打包文件時發生錯誤：' + error.message);
+                progressContainer.style.display = 'none';
+                zipProgressSection.style.display = 'none';
+                downloadBtn.disabled = false;
+            }
+        }
+        
+        function formatTime(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${minutes}:${secs.toString().padStart(2, '0')}`;
+        }
+        
+        // 將AudioBuffer轉換為WAV格式
+        function bufferToWave(abuffer, len) {
+            const numOfChan = abuffer.numberOfChannels;
+            const length = len * numOfChan * 2 + 44;
+            const buffer = new ArrayBuffer(length);
+            const view = new DataView(buffer);
+            const channels = [];
+            let sample;
+            let offset = 0;
+            let pos = 0;
+            
+            // 寫入WAV頭部
+            setUint32(0x46464952); // "RIFF"
+            setUint32(length - 8); // file length - 8
+            setUint32(0x45564157); // "WAVE"
+            
+            setUint32(0x20746d66); // "fmt " chunk
+            setUint32(16); // length = 16
+            setUint16(1); // PCM (uncompressed)
+            setUint16(numOfChan);
+            setUint32(abuffer.sampleRate);
+            setUint32(abuffer.sampleRate * 2 * numOfChan); // avg. bytes/sec
+            setUint16(numOfChan * 2); // block-align
+            setUint16(16); // 16-bit
+            
+            setUint32(0x61746164); // "data" - chunk
+            setUint32(length - pos - 4); // chunk length
+            
+            // 寫入音頻數據
+            for (let i = 0; i < abuffer.numberOfChannels; i++)
+                channels.push(abuffer.getChannelData(i));
+            
+            while (pos < length) {
+                for (let i = 0; i < numOfChan; i++) {
+                    sample = Math.max(-1, Math.min(1, channels[i][offset]));
+                    sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0;
+                    view.setInt16(pos, sample, true);
+                    pos += 2;
+                }
+                offset++;
+            }
+            
+            return new Blob([buffer], { type: 'audio/wav' });
+            
+            function setUint16(data) {
+                view.setUint16(pos, data, true);
+                pos += 2;
+            }
+            
+            function setUint32(data) {
+                view.setUint32(pos, data, true);
+                pos += 4;
+            }
+        }
+    </script>
+</body>
+</html>
